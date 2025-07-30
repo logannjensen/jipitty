@@ -65,6 +65,7 @@ After installing dependencies, build jipitty with the following command for your
 <summary><strong>Debian, Ubuntu, Fedora, Arch (glibc-based)</strong></summary>
 
 ```bash
+mkdir -p ./build
 g++ -o ./build/jipitty -O3 jipitty.cpp code/* -I include -lcurl -lreadline
 ```
 </details>
@@ -73,6 +74,7 @@ g++ -o ./build/jipitty -O3 jipitty.cpp code/* -I include -lcurl -lreadline
 <summary><strong>Alpine Linux (musl-based)</strong></summary>
 
 ```bash
+mkdir -p ./build
 g++ -o ./build/jipitty -O3 jipitty.cpp code/* -I include -lcurl -lreadline -largp
 ```
 </details>
