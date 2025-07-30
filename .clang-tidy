@@ -1,0 +1,52 @@
+FormatStyle:     'file'
+Checks: '-*,readability-identifier-naming'
+CheckOptions:
+  # Variables
+  - { key: readability-identifier-naming.VariableCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.LocalVariableCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.GlobalVariableCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.StaticVariableCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.PrivateMemberCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.PrivateMemberSuffix, value: '_' }
+  - { key: readability-identifier-naming.PublicMemberCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.ProtectedMemberCase, value: 'lower_case' }
+
+  # Constants
+  - { key: readability-identifier-naming.ConstantCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.ClassConstantCase, value: 'UPPER_CASE' }
+  - { key: readability-identifier-naming.EnumConstantCase, value: 'UPPER_CASE' }
+  - { key: readability-identifier-naming.MacroDefinitionCase, value: 'UPPER_CASE' }
+
+  # Functions and methods
+  - { key: readability-identifier-naming.FunctionCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.MethodCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.StaticMethodCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.VirtualMethodCase, value: 'lower_case' }
+
+  # Types (classes, structs, enums, typedefs, etc.)
+  - { key: readability-identifier-naming.ClassCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.StructCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.EnumCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.TypedefCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.TypeAliasCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.TypeTemplateParameterCase, value: 'CamelCase' }
+
+  # Template parameters
+  - { key: readability-identifier-naming.TemplateParameterCase, value: 'CamelCase' }
+  - { key: readability-identifier-naming.ValueTemplateParameterCase, value: 'CamelCase' }
+  - { key: readability-identifier-naming.ConceptCase, value: 'CamelCase' }
+
+  # Namespace names
+  - { key: readability-identifier-naming.NamespaceCase, value: 'lower_case' }
+
+  # Other identifiers
+  - { key: readability-identifier-naming.ParameterCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.ParameterPackCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.LocalConstantCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.GlobalConstantCase, value: 'UPPER_CASE' }
+  - { key: readability-identifier-naming.ExternConstantCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.MemberFunctionCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.MemberFunctionConstCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.MemberFunctionPointerCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.MemberFunctionLValueCase, value: 'lower_case' }
+  - { key: readability-identifier-naming.MemberFunctionRValueCase, value: 'lower_case' }
