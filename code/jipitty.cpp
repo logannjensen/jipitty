@@ -21,7 +21,6 @@ struct message_sse_dechunker : net::sse_dechunker
     bool        unexpected_response = false;
     bool        done                = false;
 };
-int test_thing = 9;
 
 namespace defaults
 {
