@@ -344,15 +344,22 @@ net::response net::client::send(const net::request& request)
                          default_data.size());
     }
 
-    if (request.method != net::http_method::HTTP_METHOD_NULL)
+    net::http_method method_to_use =
+        request.method != net::http_method::HTTP_METHOD_NULL ? request.method
+                                                             : default_method;
+
+    if (method_to_use == net::http_method::GET)
     {
-        curl_easy_setopt(curl_.get(), CURLOPT_CUSTOMREQUEST,
-                         http_method_to_string(request.method).c_str());
+        curl_easy_setopt(curl_.get(), CURLOPT_HTTPGET, 1L);
     }
-    else if (default_method != net::http_method::HTTP_METHOD_NULL)
+    else if (method_to_use == net::http_method::POST)
+    {
+        curl_easy_setopt(curl_.get(), CURLOPT_POST, 1L);
+    }
+    else if (method_to_use != net::http_method::HTTP_METHOD_NULL)
     {
         curl_easy_setopt(curl_.get(), CURLOPT_CUSTOMREQUEST,
-                         http_method_to_string(default_method).c_str());
+                         http_method_to_string(method_to_use).c_str());
     }
 
     std::unordered_map<std::string, std::string> headers_to_send;
