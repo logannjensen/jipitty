@@ -276,13 +276,18 @@ public:
                  return false;
              }},
             {"file <file_path1> [<file_path2> ...]",
-             "Upload one or more labeled files to OpenAI as a message",
+             "Upload one or more labeled files to OpenAI as a message.",
              [&]()
              {
                  bool send = false;
                  int  file_count =
                      std::max<size_t>(prompt.get_arg_count(), 1) - 1;
                  input.erase();
+                 if (!file_count)
+                 {
+                     std::cerr << chat_cli::error_tag_string("Command Error")
+                               << "No files given" << std::endl;
+                 }
 
                  for (int file_index = 0; file_index < file_count; file_index++)
                  {
