@@ -526,25 +526,43 @@ void net::url::set_default_port()
 
 std::string net::url::encode(const std::string& str)
 {
-    CURL*       curl    = curl_easy_init();
+    static CURL* curl = nullptr;
+    if (!curl)
+    {
+        curl = curl_easy_init();
+        atexit(
+            []()
+            {
+                if (curl)
+                    curl_easy_cleanup(curl);
+            });
+    }
     char*       encoded = curl_easy_escape(curl, str.c_str(), str.length());
     std::string result  = encoded ? std::string(encoded) : "";
     if (encoded)
         curl_free(encoded);
-    curl_easy_cleanup(curl);
     return result;
 }
 
 std::string net::url::decode(const std::string& str)
 {
-    CURL* curl = curl_easy_init();
+    static CURL* curl = nullptr;
+    if (!curl)
+    {
+        curl = curl_easy_init();
+        atexit(
+            []()
+            {
+                if (curl)
+                    curl_easy_cleanup(curl);
+            });
+    }
     int   outlength;
     char* decoded =
         curl_easy_unescape(curl, str.c_str(), str.length(), &outlength);
     std::string result = decoded ? std::string(decoded, outlength) : "";
     if (decoded)
         curl_free(decoded);
-    curl_easy_cleanup(curl);
     return result;
 }
 
