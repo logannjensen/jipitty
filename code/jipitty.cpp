@@ -33,6 +33,7 @@ constexpr int     MAX_TOKENS        = 0;
 const std::string SYSTEM_PROMPT     = "";
 const std::string MODEL             = "gpt-4.1";
 const std::string API_KEY_ENV       = "OPENAI_API_KEY";
+const std::string FILE_DELIMITER    = "```";
 } // namespace defaults
 
 class chat_config
@@ -264,9 +265,10 @@ class chat_cli
 {
 public:
     chat_cli(chat_config& c)
-        : cfg(c), completion(), client(), input(), prompt(), input_file(),
-          sse(), script_mode(!cfg.input_file_name.empty() ||
-                             !isatty(STDOUT_FILENO) || !isatty(STDIN_FILENO))
+        : cfg(c), completion(), client(), input(), prompt_builder(),
+          building_prompt(false), prompt(), input_file(), sse(),
+          script_mode(!cfg.input_file_name.empty() || !isatty(STDOUT_FILENO) ||
+                      !isatty(STDIN_FILENO))
     {
         commands = {
             {"exit", "Exit the program.",
@@ -275,42 +277,64 @@ public:
                  prompt.keep_alive = false;
                  return false;
              }},
-            {"file <file_path1> [<file_path2> ...]",
-             "Upload one or more labeled files to OpenAI as a message.",
+
+            {"prompt",
+             "Start buffering a prompt with input and commands, or print the "
+             "current prompt if already buffering.",
              [&]()
              {
-                 bool send = false;
-                 int  file_count =
-                     std::max<size_t>(prompt.get_arg_count(), 1) - 1;
-                 input.erase();
-                 if (!file_count)
+                 if (!building_prompt)
+                 {
+                     building_prompt = true;
+                 }
+                 else
+                 {
+                     std::cout << cli::set_format(prompt_builder.str(),
+                                                  cli::format::YELLOW);
+                 }
+                 return false;
+             }},
+
+            {"send", "Send the current prompt.",
+             [&]()
+             {
+                 if (building_prompt && !prompt_builder.str().empty())
+                 {
+                     building_prompt = false;
+                     input.str(prompt_builder.str());
+                     prompt_builder.str("");
+                     return true;
+                 }
+                 else
                  {
                      std::cerr << chat_cli::error_tag_string("Command Error")
-                               << "No files given" << std::endl;
+                               << "No prompt to send" << std::endl;
+                     return false;
                  }
-
-                 for (int file_index = 0; file_index < file_count; file_index++)
-                 {
-                     std::string   file_name = prompt.get_next_arg();
-                     std::ifstream fs(file_name);
-                     std::string   file_delimiter = "```";
-                     if (fs.is_open())
-                     {
-                         input += (file_delimiter + file_name + "\n");
-                         input +=
-                             std::string((std::istreambuf_iterator<char>(fs)),
-                                         std::istreambuf_iterator<char>());
-                         input += (file_delimiter + "\n");
-                         send = true;
-                     }
-                     else
-                     {
-                         std::cerr << file_error_tag_string(file_name)
-                                   << std::endl;
-                     }
-                 }
-                 return send;
              }},
+
+            {"file <file_path1> [<file_path2> ...]",
+             "Upload one or more labeled files to OpenAI or "
+             "append to current prompt.",
+             [&]() { return add_files_to_prompt(); }},
+            {"shell <command>",
+             "Execute a shell command and send it with standard output to "
+             "OpenAI or "
+             "append to the current prompt. Use at your own peril.",
+             [&]()
+             {
+                 std::string shell_cmd = prompt.get_next_arg();
+                 return execute_shell(shell_cmd);
+             }},
+
+            {"clear", "Clear the current prompt and stop building.",
+             [&]()
+             {
+                 prompt_builder.str("");
+                 building_prompt = false;
+                 return false;
+             }},
+
             {"import <file_path>",
              "Import a json file to use as the current request object.",
              [&]()
@@ -429,24 +453,39 @@ public:
                  print_messages();
                  return false;
              }},
-            {"help", "Show this message.",
+            {"help [first] [count]",
+             "Show [count] help messages starting from [first].",
              [&]()
              {
-                 print_commands();
+                 int         first = 0, count = 0;
+                 std::string arg1 = prompt.get_next_arg();
+                 std::string arg2 = prompt.get_next_arg();
+                 if (!arg1.empty())
+                 {
+                     std::stringstream ss(arg1);
+                     if (!(ss >> first) || first < 0 ||
+                         first >= (int)commands.size())
+                         first = 0;
+                 }
+                 if (!arg2.empty())
+                 {
+                     std::stringstream ss(arg2);
+                     if (!(ss >> count) || count < 0)
+                         count = 0;
+                 }
+                 print_commands(first, count);
                  return false;
              }},
-            {"options", "Show this message.",
-             [&]()
-             {
-                 print_commands();
-                 return false;
-             }}};
+
+        };
     }
 
     chat_config                  cfg;
     chat_completion              completion;
     net::client                  client;
-    std::string                  input;
+    std::ostringstream           input;
+    std::ostringstream           prompt_builder;
+    bool                         building_prompt;
     cli::prompt                  prompt;
     std::ifstream                input_file;
     message_sse_dechunker        sse;
@@ -478,6 +517,71 @@ public:
                    "Failed to open file '" + file_name + '\'';
     }
 
+    bool add_files_to_prompt()
+    {
+        bool send       = false;
+        int  file_count = std::max<size_t>(prompt.get_arg_count(), 1) - 1;
+        input.str("");
+        if (!file_count)
+        {
+            std::cerr << chat_cli::error_tag_string("Command Error")
+                      << "No files given" << std::endl;
+        }
+
+        for (int file_index = 0; file_index < file_count; file_index++)
+        {
+            std::string   file_name = prompt.get_next_arg();
+            std::ifstream fs(file_name);
+            if (fs.is_open())
+            {
+                input << defaults::FILE_DELIMITER << file_name << std::endl;
+                input << std::string((std::istreambuf_iterator<char>(fs)),
+                                     std::istreambuf_iterator<char>());
+                input << defaults::FILE_DELIMITER << std::endl;
+                send = true;
+            }
+            else
+            {
+                std::cerr << file_error_tag_string(file_name) << std::endl;
+            }
+        }
+
+        return send;
+    }
+
+    bool execute_shell(std::string shell_cmd)
+    {
+        input.str("");
+        if (shell_cmd.empty())
+        {
+            std::cerr << chat_cli::error_tag_string("Command Error")
+                      << "No shell command provided." << std::endl;
+            return false;
+        }
+        std::string output;
+        FILE*       pipe = popen(shell_cmd.c_str(), "r");
+        if (!pipe)
+        {
+            std::cerr << chat_cli::error_tag_string("Command Error")
+                      << "Failed to run shell command." << std::endl;
+            return false;
+        }
+        char buffer[256];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
+            output += buffer;
+        int rc = pclose(pipe);
+        if (rc != 0)
+        {
+            std::cerr << chat_cli::error_tag_string("Command Error")
+                      << "Shell command exited with code " << rc << std::endl;
+        }
+
+        input << defaults::FILE_DELIMITER << shell_cmd << std::endl
+              << output << defaults::FILE_DELIMITER << std::endl;
+
+        return true;
+    }
+
     std::string message_tag_string()
     {
         std::ostringstream oss;
@@ -503,7 +607,7 @@ public:
 
         if (!script_mode)
         {
-            std::cout << "[" << cli::set_format("Chat CLI", cli::format::YELLOW)
+            std::cout << "[" << cli::set_format("Jipitty", cli::format::YELLOW)
                       << "] Enter " << cfg.command_symbol << "help for commands"
                       << std::endl;
         }
@@ -526,14 +630,15 @@ public:
         client.subscribe(net::sse_dechunker_callback, &sse);
         do
         {
-            input          = {};
+            input.str("");
             bool send_chat = true;
             if (!script_mode)
             {
-                input = prompt.read_para(chat_cli::user_tag_string());
-                if (!input.empty())
+                input << prompt.read_para(
+                    building_prompt ? ">" : chat_cli::user_tag_string());
+                if (!input.str().empty())
                 {
-                    if (input[0] == cfg.command_symbol)
+                    if (input.str()[0] == cfg.command_symbol)
                         send_chat = process_commands();
                 }
             }
@@ -545,83 +650,104 @@ public:
 
             if (send_chat)
             {
-                if (completion.messages.size() > response_index)
-                    completion.messages.resize(response_index);
-                json request_object = completion.create_request(cfg);
-                json next_message   = {{"role", "user"}, {"content", input}};
-                request_object["messages"].push_back(next_message);
-
-                sse          = message_sse_dechunker();
-                sse.callback = [&](const std::string&, const std::string& data)
+                if (building_prompt)
                 {
-                    if (!data.empty())
-                    {
-                        try
-                        {
-                            nlohmann::json content = nlohmann::json::parse(
-                                data)["choices"][0]["delta"]["content"];
-                            if (content.is_string())
-                            {
-                                std::string chunk_string =
-                                    content.get<std::string>();
-                                if (!sse.started)
-                                {
-                                    sse.started = true;
-                                    std::cout << chat_cli::bot_tag_string();
-                                }
-                                std::cout << chunk_string;
-                                std::cout.flush();
-                                sse.message.append(chunk_string);
-                            }
-                        }
-                        catch (const std::exception& e)
-                        {
-                            if (data.find("[DONE]") != std::string::npos)
-                                sse.done = true;
-                        }
-                    }
-                };
-
-                if (script_mode)
-                    sse.started = true;
-                net::response response = client.send(
-                    {cfg.base_url.to_string() + "/v1/chat/completions",
-                     net::http_method::POST,
-                     {},
-                     request_object});
-
-                if (response.curl_code != CURLE_OK)
-                {
-                    std::cerr << chat_cli::error_tag_string("Network Error")
-                              << curl_easy_strerror(response.curl_code);
-                }
-                else if (response.response_code != 200)
-                {
-                    try
-                    {
-                        json response_json = json::parse(response.to_string());
-                        std::string api_error_message =
-                            response_json["error"]["message"]
-                                .get<std::string>();
-                        std::cerr << chat_cli::error_tag_string("API Error")
-                                  << api_error_message;
-                    }
-                    catch (const std::exception& e)
-                    {
-                        std::cerr << chat_cli::error_tag_string("HTTP Error")
-                                  << response.status_line;
-                    }
-                }
-                else if (sse.unexpected_response)
-                {
-                    throw std::runtime_error("Unexpected server response");
+                    prompt_builder << input.str() << std::endl;
                 }
                 else
                 {
-                    completion.messages.push_back({input, sse.message});
-                    response_index++;
+                    if (completion.messages.size() > response_index)
+                        completion.messages.resize(response_index);
+                    json request_object = completion.create_request(cfg);
+                    json next_message   = {{"role", "user"},
+                                           {"content", input.str()}};
+
+                    request_object["messages"].push_back(next_message);
+
+                    sse = message_sse_dechunker();
+                    sse.callback =
+                        [&](const std::string&, const std::string& data)
+                    {
+                        if (!data.empty())
+                        {
+                            try
+                            {
+                                nlohmann::json content = nlohmann::json::parse(
+                                    data)["choices"][0]["delta"]["content"];
+                                if (content.is_string())
+                                {
+                                    std::string chunk_string =
+                                        content.get<std::string>();
+                                    if (!sse.started)
+                                    {
+                                        sse.started = true;
+                                        std::cout << chat_cli::bot_tag_string();
+                                    }
+                                    std::cout << chunk_string;
+                                    std::cout.flush();
+                                    sse.message.append(chunk_string);
+                                }
+                            }
+                            catch (const std::exception& e)
+                            {
+                                if (data.find("[DONE]") != std::string::npos)
+                                    sse.done = true;
+                            }
+                        }
+                    };
+
+                    if (script_mode)
+                        sse.started = true;
+
+#if 0
+                    std::cout << cli::set_format(
+                                     next_message["content"].get<std::string>(),
+                                     cli::format::RED)
+                              << std::endl;
+#endif
+
+                    net::response response = client.send(
+                        {cfg.base_url.to_string() + "/v1/chat/completions",
+                         net::http_method::POST,
+                         {},
+                         request_object});
+
+                    if (response.curl_code != CURLE_OK)
+                    {
+                        std::cerr << chat_cli::error_tag_string("Network Error")
+                                  << curl_easy_strerror(response.curl_code);
+                    }
+                    else if (response.response_code != 200)
+                    {
+                        try
+                        {
+                            json response_json =
+                                json::parse(response.to_string());
+                            std::string api_error_message =
+                                response_json["error"]["message"]
+                                    .get<std::string>();
+                            std::cerr << chat_cli::error_tag_string("API Error")
+                                      << api_error_message;
+                        }
+                        catch (const std::exception& e)
+                        {
+                            std::cerr
+                                << chat_cli::error_tag_string("HTTP Error")
+                                << response.status_line;
+                        }
+                    }
+                    else if (sse.unexpected_response)
+                    {
+                        throw std::runtime_error("Unexpected server response");
+                    }
+                    else
+                    {
+                        completion.messages.push_back(
+                            {input.str(), sse.message});
+                        response_index++;
+                    }
+                    std::cout << std::endl;
                 }
-                std::cout << std::endl;
             }
             if (!cfg.export_chat_file_name.empty())
                 export_to_file(cfg.export_chat_file_name);
@@ -633,18 +759,18 @@ public:
     {
         char c;
         bool send_chat = true;
-        input.erase();
+        input.str("");
         do
         {
             stream.get(c);
             if (stream.eof())
             {
                 prompt.keep_alive = false;
-                send_chat         = !input.empty();
+                send_chat         = !input.str().empty();
             }
             else
             {
-                input.push_back(c);
+                input << c;
             }
         } while (prompt.keep_alive);
         return send_chat;
@@ -681,15 +807,25 @@ public:
         return send_chat;
     }
 
-    void print_commands() const
+    void print_commands(int first = 0, int count = 0) const
     {
         std::string sym(1, cfg.command_symbol);
         std::cout << cli::set_format("jipitty", cli::format::BOLD)
                   << ", An OpenAI Large Language Model CLI, written in C++\n";
         std::cout << "All commands have the prefix '" << sym << "'\n";
         std::cout << "Anything else is uploaded to OpenAI as a message.\n\n";
-        for (const auto& cmd : commands)
+
+        int total = (int)commands.size();
+        if (first < 0 || first >= total)
+            first = 0;
+        if (count < 0)
+            count = 0;
+
+        int last = (count == 0) ? total : std::min(total, first + count);
+
+        for (int i = first; i < last; ++i)
         {
+            const auto& cmd       = commands[i];
             std::string cmd_name  = cmd.title;
             auto        space_pos = cmd_name.find(' ');
             if (space_pos != std::string::npos)

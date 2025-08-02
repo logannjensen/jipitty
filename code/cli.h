@@ -59,6 +59,7 @@ public:
     int         parse();
     void        set_prompt(const std::string&) {}
     uint32_t    error_flags;
+    bool        escape_mode;
     bool        keep_alive;
 
 private:

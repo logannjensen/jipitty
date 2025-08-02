@@ -45,7 +45,8 @@ std::string set_format(const std::string& text, format fmt)
 }
 
 prompt::prompt()
-    : error_flags(0), keep_alive(true), args_allocated_(false), arg_index_(0)
+    : error_flags(0), escape_mode(false), keep_alive(true),
+      args_allocated_(false), arg_index_(0)
 {
 }
 
@@ -109,7 +110,7 @@ std::string prompt::read_para(const std::string& first_prompt_text,
         {
             next_line = line;
             free(line);
-            if (next_line.size() &&
+            if (!escape_mode && next_line.size() &&
                 next_line.at(next_line.size() - 1) == new_line_char)
             {
                 next_line.back() = '\n';
