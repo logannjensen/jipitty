@@ -174,6 +174,10 @@ int prompt::parse()
         args_allocated_ = true;
         break;
     }
+
+    if (word_exp_err != 0)
+        args_allocated_ = false;
+
     error_flags |= error_code;
     return error_code ? -1 : args_.we_wordc;
 }
