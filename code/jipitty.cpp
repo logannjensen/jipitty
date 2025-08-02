@@ -275,22 +275,36 @@ public:
                  prompt.keep_alive = false;
                  return false;
              }},
-            {"file <file_path>", "Upload a file to OpenAI as a message.",
+            {"file <file_path1> [<file_path2> ...]",
+             "Upload one or more labeled files to OpenAI as a message",
              [&]()
              {
-                 std::string   file_name = prompt.get_next_arg();
-                 std::ifstream fs(file_name);
-                 if (fs.is_open())
+                 bool send = false;
+                 int  file_count =
+                     std::max<size_t>(prompt.get_arg_count(), 1) - 1;
+                 input.erase();
+
+                 for (int file_index = 0; file_index < file_count; file_index++)
                  {
-                     input = std::string((std::istreambuf_iterator<char>(fs)),
+                     std::string   file_name = prompt.get_next_arg();
+                     std::ifstream fs(file_name);
+                     std::string   file_delimiter = "```";
+                     if (fs.is_open())
+                     {
+                         input += (file_delimiter + file_name + "\n");
+                         input +=
+                             std::string((std::istreambuf_iterator<char>(fs)),
                                          std::istreambuf_iterator<char>());
-                     return true;
+                         input += (file_delimiter + "\n");
+                         send = true;
+                     }
+                     else
+                     {
+                         std::cerr << file_error_tag_string(file_name)
+                                   << std::endl;
+                     }
                  }
-                 else
-                 {
-                     std::cerr << file_error_tag_string(file_name) << std::endl;
-                     return false;
-                 }
+                 return send;
              }},
             {"import <file_path>",
              "Import a json file to use as the current request object.",
@@ -565,7 +579,6 @@ public:
 
                 if (script_mode)
                     sse.started = true;
-
                 net::response response = client.send(
                     {cfg.base_url.to_string() + "/v1/chat/completions",
                      net::http_method::POST,
@@ -635,23 +648,29 @@ public:
     bool process_commands()
     {
         bool send_chat = false;
+        bool cmd_err   = true;
         if (prompt.parse() > 0)
         {
             std::string command = prompt.get_next_arg().substr(1);
-            auto        it      = std::find_if(
-                commands.begin(), commands.end(),
-                [&](const runtime_command& cmd)
-                { return cmd.title.substr(0, command.size()) == command; });
-            if (it != commands.end())
+            if (!command.empty())
             {
-                send_chat = it->action();
+                auto it = std::find_if(
+                    commands.begin(), commands.end(),
+                    [&](const runtime_command& cmd)
+                    { return cmd.title.substr(0, command.size()) == command; });
+                if (it != commands.end())
+                {
+                    send_chat = it->action();
+                    cmd_err   = false;
+                }
             }
-            else
-            {
-                std::cerr << chat_cli::error_tag_string("Command Error")
-                          << "Invalid command, try " << cfg.command_symbol
-                          << "help" << std::endl;
-            }
+        }
+
+        if (cmd_err)
+        {
+            std::cerr << chat_cli::error_tag_string("Command Error")
+                      << "Invalid command, try " << cfg.command_symbol << "help"
+                      << std::endl;
         }
 
         return send_chat;
