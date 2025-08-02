@@ -55,6 +55,7 @@ public:
                           const std::string& prompt_text       = ">",
                           char               new_line_char     = '\\');
     std::string get_next_arg();
+    size_t      get_arg_count();
     int         parse();
     void        set_prompt(const std::string&) {}
     uint32_t    error_flags;

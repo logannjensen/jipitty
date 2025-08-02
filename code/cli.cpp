@@ -144,6 +144,8 @@ std::string prompt::get_next_arg()
     return next_arg_string;
 }
 
+size_t prompt::get_arg_count() { return args_.we_wordc; }
+
 int prompt::parse()
 {
     if (args_allocated_)
