@@ -21,8 +21,7 @@ void net::client::ensure_curl_initialized()
 net::client::client(net::url url_to_send_to)
     : default_url(std::move(url_to_send_to)),
       default_method(http_method::HTTP_METHOD_NULL),
-      curl_(curl_easy_init(), &curl_deleter), header_list_(nullptr),
-      cookie_list_(nullptr)
+      curl_(curl_easy_init(), &curl_deleter), header_list_(nullptr)
 {
     ensure_curl_initialized();
     if (!curl_)
@@ -38,10 +37,6 @@ net::client::~client()
     if (header_list_ != nullptr)
     {
         curl_slist_free_all(header_list_);
-    }
-    if (cookie_list_ != nullptr)
-    {
-        curl_slist_free_all(cookie_list_);
     }
 }
 
@@ -291,22 +286,18 @@ parse_raw_headers(const std::string&                            raw_headers,
 std::vector<std::string> net::client::get_cookies()
 {
     std::vector<std::string> cookies;
-    if (cookie_list_ != nullptr)
+    struct curl_slist*       cookie_list = nullptr;
+    CURLcode                 res =
+        curl_easy_getinfo(curl_.get(), CURLINFO_COOKIELIST, &cookie_list);
+    if (!res && cookie_list)
     {
-        curl_slist_free_all(cookie_list_);
-        cookie_list_ = nullptr;
-    }
-
-    CURLcode res =
-        curl_easy_getinfo(curl_.get(), CURLINFO_COOKIELIST, &cookie_list_);
-    if (!res && cookie_list_)
-    {
-        struct curl_slist* each = cookie_list_;
+        struct curl_slist* each = cookie_list;
         while (each)
         {
             cookies.push_back(each->data);
             each = each->next;
         }
+        curl_slist_free_all(cookie_list);
     }
     return cookies;
 }

@@ -151,7 +151,6 @@ private:
     static size_t write_header_callback(void* contents, size_t size,
                                         size_t nmemb, void* userp);
     struct curl_slist* header_list_ = nullptr;
-    struct curl_slist* cookie_list_ = nullptr;
 };
 
 } // namespace net
