@@ -34,6 +34,8 @@ const std::string SYSTEM_PROMPT     = "";
 const std::string MODEL             = "gpt-4.1";
 const std::string API_KEY_ENV       = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER    = "```";
+const std::string VERSION           = "0.1";
+const std::string NAME              = "Jipitty";
 } // namespace defaults
 
 class chat_config
@@ -45,7 +47,7 @@ public:
           presence(defaults::PRESENCE_PENALTY),
           frequency(defaults::FREQUENCY_PENALTY),
           max_tokens(defaults::MAX_TOKENS), system(defaults::SYSTEM_PROMPT),
-          model(defaults::MODEL)
+          model(defaults::MODEL), show_version(false), extract_code(false)
     {
         char* key_ptr = std::getenv(defaults::API_KEY_ENV.c_str());
         api_key       = key_ptr ? key_ptr : "";
@@ -64,6 +66,8 @@ public:
     int         max_tokens;
     std::string system;
     std::string model;
+    bool        show_version;
+    bool        extract_code;
 
     void reset()
     {
@@ -132,7 +136,10 @@ public:
              "Set system prompt for this conversation", 0},
             {"model", 'm', "STRING", 0,
              "Set the name of the language model to use", 0},
-            {"url", 'u', "URL", 0, "OpenAI API base url", 0}};
+            {"extract", 'x', 0, 0,
+             "Extract the last code block from the response", 0},
+            {"url", 'u', "URL", 0, "OpenAI API base url", 0},
+            {"version", 'v', 0, 0, "Show version", 0}};
     };
 
     static int from_shell_arg(int key, char* arg, struct argp_state* state,
@@ -171,8 +178,14 @@ public:
         case 'm':
             cfg.model = arg;
             break;
+        case 'x':
+            cfg.extract_code = true;
+            break;
         case 'u':
             cfg.base_url = net::url(arg);
+            break;
+        case 'v':
+            cfg.show_version = true;
             break;
         case ARGP_KEY_ARG:
             if (state->arg_num >= 1)
@@ -517,6 +530,25 @@ public:
                    "Failed to open file '" + file_name + '\'';
     }
 
+    static std::string extract_code_block(const std::string& content)
+    {
+        size_t last = content.rfind(defaults::FILE_DELIMITER);
+        if (last == std::string::npos)
+            return "";
+
+        size_t second_last = content.rfind(defaults::FILE_DELIMITER, last - 1);
+        if (second_last == std::string::npos)
+            return "";
+        size_t content_start = second_last + defaults::FILE_DELIMITER.length();
+        std::string code_block =
+            content.substr(content_start, last - content_start);
+        size_t first_vws = code_block.find_first_of("\r\n");
+        if (first_vws != std::string::npos)
+            return code_block.substr(first_vws + 1);
+        else
+            return "";
+    }
+
     bool add_files_to_prompt()
     {
         bool send       = false;
@@ -605,9 +637,20 @@ public:
             return -1;
         }
 
+        if (cfg.show_version)
+        {
+            std::cout << defaults::NAME << " v" << defaults::VERSION
+                      << std::endl;
+            return 0;
+        }
+
         if (!script_mode)
         {
-            std::cout << "[" << cli::set_format("Jipitty", cli::format::YELLOW)
+            cfg.extract_code = false;
+            std::cout << "["
+                      << cli::set_format(defaults::NAME + " v" +
+                                             defaults::VERSION,
+                                         cli::format::YELLOW)
                       << "] Enter " << cfg.command_symbol << "help for commands"
                       << std::endl;
         }
@@ -627,7 +670,6 @@ public:
             import_from_file(cfg.import_chat_file_name);
 
         client.default_headers["Authorization"] = "Bearer " + cfg.api_key;
-        client.subscribe(net::sse_dechunker_callback, &sse);
         do
         {
             input.str("");
@@ -705,12 +747,22 @@ public:
                                      cli::format::RED)
                               << std::endl;
 #endif
+                    if (cfg.extract_code)
+                        request_object["stream"] = false;
+                    net::request req = {cfg.base_url.to_string() +
+                                            "/v1/chat/completions",
+                                        net::http_method::POST,
+                                        {},
+                                        request_object};
+                    if (!cfg.extract_code)
+                        req.subscribe(net::sse_dechunker_callback, &sse);
+                    net::response response = client.send(req);
 
-                    net::response response = client.send(
-                        {cfg.base_url.to_string() + "/v1/chat/completions",
-                         net::http_method::POST,
-                         {},
-                         request_object});
+#if 0
+                    std::cout << cli::set_format(response.to_string(),
+                                                 cli::format::MAGENTA)
+                              << std::endl;
+#endif
 
                     if (response.curl_code != CURLE_OK)
                     {
@@ -745,6 +797,23 @@ public:
                         completion.messages.push_back(
                             {input.str(), sse.message});
                         response_index++;
+
+                        if (cfg.extract_code)
+                        {
+                            json response_json =
+                                json::parse(response.to_string());
+
+                            std::string content =
+                                response_json["choices"][0]["message"]
+                                             ["content"]
+                                                 .get<std::string>();
+
+                            std::string code_block =
+                                extract_code_block(content);
+                            if (code_block.empty())
+                                return -1;
+                            std::cout << code_block;
+                        }
                     }
                     std::cout << std::endl;
                 }
