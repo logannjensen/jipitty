@@ -10,9 +10,8 @@
 
 // TODO: X	Less paging
 // TODO: X	Ambigous command prefix handling
-// TODO: 	Code extraction runtime command
+// TODO: X	Code extraction runtime command
 // TODO: 	Code extraction filter option in argp
-// TODO: 	Diff command
 // TODO: 	cfg modifiers print current value if no arg provided
 // TODO: 	Runtime command tab completion
 
@@ -32,20 +31,21 @@ struct message_sse_dechunker : net::sse_dechunker
 
 namespace defaults
 {
-constexpr char    COMMAND_SYMBOL    = ':';
-const std::string BASE_URL          = "https://api.openai.com";
-constexpr float   TEMPERATURE       = 0.0f;
-constexpr float   PRESENCE_PENALTY  = 0.0f;
-constexpr float   FREQUENCY_PENALTY = 0.0f;
-constexpr int     MAX_TOKENS        = 0;
-const std::string SYSTEM_PROMPT     = "";
-const std::string MODEL             = "gpt-4.1";
-const std::string API_KEY_ENV       = "OPENAI_API_KEY";
-const std::string FILE_DELIMITER    = "```";
-const std::string VERSION           = "0.2";
-const std::string NAME              = "Jipitty";
-const int         TERMINAL_HEIGHT   = 24;
-const std::string LESS_COMMAND      = "less";
+constexpr char    COMMAND_SYMBOL       = ':';
+const std::string BASE_URL             = "https://api.openai.com";
+const std::string COMPLETIONS_ENDPOINT = "/v1/chat/completions";
+constexpr float   TEMPERATURE          = 0.0f;
+constexpr float   PRESENCE_PENALTY     = 0.0f;
+constexpr float   FREQUENCY_PENALTY    = 0.0f;
+constexpr int     MAX_TOKENS           = 0;
+const std::string SYSTEM_PROMPT        = "";
+const std::string MODEL                = "gpt-4.1";
+const std::string API_KEY_ENV          = "OPENAI_API_KEY";
+const std::string FILE_DELIMITER       = "```";
+const std::string VERSION              = "0.2";
+const std::string NAME                 = "Jipitty";
+const int         TERMINAL_HEIGHT      = 24;
+const std::string LESS_COMMAND         = "less";
 } // namespace defaults
 
 class chat_config
@@ -310,34 +310,11 @@ public:
                  {
                      building_prompt = true;
                  }
-                 else
+                 else if (less_output_with_fallback(prompt_builder.str()))
                  {
-                     bool dump = false;
-                     try
-                     {
-                         std::string prompt_str = prompt_builder.str();
-                         int         line_count = std::count(prompt_str.begin(),
-                                                             prompt_str.end(), '\n');
-                         if (line_count > defaults::TERMINAL_HEIGHT)
-                         {
-                             dump = pipe_to_shell(prompt_builder.str(),
-                                                  defaults::LESS_COMMAND) != 0;
-                         }
-                         else
-                         {
-                             dump = true;
-                         }
-                     }
-                     catch (const std::exception& e)
-                     {
-                         dump = true;
-                     }
-
-                     if (dump)
-                     {
-                         std::cout << cli::set_format(prompt_builder.str(),
-                                                      cli::format::YELLOW);
-                     }
+                     std::cout << cli::set_format(prompt_builder.str(),
+                                                  cli::format::YELLOW)
+                               << std::endl;
                  }
                  return false;
              }},
@@ -554,6 +531,53 @@ public:
                  }
                  return false;
              }},
+            {"extract <command> [filter ...]",
+             "Extract the last code block in the selected response and "
+             "redirect it to a shell command like 'less', 'diff ./my_file - ', "
+             ",'xclip -selection clipboard' or 'cat > my_file'. Filter to only "
+             "select blocks by extension like 'cpp' or 'sh'.",
+             [&]() { //
+                 int target_index = (int)response_index - 1;
+                 if (target_index >= 0)
+                 {
+                     message     msg  = completion.messages[target_index];
+                     std::string code = extract_code_block(msg.assistant);
+                     if (!code.empty())
+                     {
+                         std::string shell_cmd = prompt.get_next_arg();
+                         try
+                         {
+                             int rc = pipe_to_shell(code, shell_cmd);
+                             if (rc)
+                             {
+                                 std::cerr << chat_cli::error_tag_string(
+                                                  "Command Error")
+                                           << "Shell command exited with code "
+                                           << rc << std::endl;
+                             }
+                         }
+                         catch (const std::exception& e)
+                         {
+                             std::cerr
+                                 << chat_cli::error_tag_string("Command Error")
+                                 << e.what() << std::endl;
+                         }
+                     }
+                     else
+                     {
+                         std::cerr
+                             << chat_cli::error_tag_string("Command Error")
+                             << "No code found in selected message"
+                             << std::endl;
+                     }
+                 }
+                 else
+                 {
+                     std::cerr << chat_cli::error_tag_string("Command Error")
+                               << "No message selected" << std::endl;
+                 }
+                 return false;
+             }},
             {"help [first] [count]",
              "Show [count] help messages starting from [first].",
              [&]()
@@ -564,8 +588,7 @@ public:
                  if (!arg1.empty())
                  {
                      std::stringstream ss(arg1);
-                     if (!(ss >> first) || first < 0 ||
-                         first >= (int)commands.size())
+                     if (!(ss >> first) || first < 0)
                          first = 0;
                  }
                  if (!arg2.empty())
@@ -574,7 +597,11 @@ public:
                      if (!(ss >> count) || count < 0)
                          count = 0;
                  }
-                 print_commands(first, count);
+                 std::string help_string = print_commands(first, count).str();
+                 if (less_output_with_fallback(help_string))
+                 {
+                     std::cout << help_string;
+                 }
                  return false;
              }},
 
@@ -667,6 +694,32 @@ public:
         }
 
         return send;
+    }
+
+    bool less_output_with_fallback(const std::string& output_str)
+    {
+        bool fallback = false;
+        try
+        {
+            int line_count =
+                std::count(output_str.begin(), output_str.end(), '\n');
+            if (line_count > defaults::TERMINAL_HEIGHT)
+                fallback =
+                    pipe_to_shell(
+                        cli::set_format(
+                            "[Controls: q to exit, j/k to scroll, h for more]",
+                            cli::format::BOLD) +
+                            "\n\n" + output_str,
+                        defaults::LESS_COMMAND) != 0;
+            else
+                fallback = true;
+        }
+        catch (const std::exception& e)
+        {
+            fallback = true;
+        }
+
+        return fallback;
     }
 
     int pipe_to_shell(const std::string& text, const std::string& shell_cmd)
@@ -859,7 +912,7 @@ public:
                     if (cfg.extract_code)
                         request_object["stream"] = false;
                     net::request req = {cfg.base_url.to_string() +
-                                            "/v1/chat/completions",
+                                            defaults::COMPLETIONS_ENDPOINT,
                                         net::http_method::POST,
                                         {},
                                         request_object};
@@ -996,16 +1049,17 @@ public:
         return send_chat;
     }
 
-    void print_commands(int first = 0, int count = 0) const
+    std::stringstream print_commands(int first = 0, int count = 0) const
     {
-        std::string sym(1, cfg.command_symbol);
-        std::cout << cli::set_format("jipitty", cli::format::BOLD)
-                  << ", An OpenAI Large Language Model CLI, written in C++\n";
-        std::cout << "All commands have the prefix '" << sym << "'\n";
-        std::cout << "Anything else is uploaded to OpenAI as a message.\n\n";
+        std::stringstream ss;
+        std::string       sym(1, cfg.command_symbol);
+        ss << cli::set_format("jipitty", cli::format::BOLD)
+           << ", An OpenAI Large Language Model CLI, written in C++\n";
+        ss << "All commands have the prefix '" << sym << "'\n";
+        ss << "Anything else is uploaded to OpenAI as a message.\n\n";
 
         int total = (int)commands.size();
-        if (first < 0 || first >= total)
+        if (first < 0)
             first = 0;
         if (count < 0)
             count = 0;
@@ -1019,10 +1073,10 @@ public:
             auto        space_pos = cmd_name.find(' ');
             if (space_pos != std::string::npos)
                 cmd_name = cmd_name.substr(0, space_pos);
-            std::cout << cli::set_format(sym + cmd.title, cli::format::BOLD)
-                      << "\n";
-            std::cout << "\t" << cmd.doc << "\n\n";
+            ss << cli::set_format(sym + cmd.title, cli::format::BOLD) << "\n";
+            ss << "\t" << cmd.doc << "\n\n";
         }
+        return ss;
     }
 
     void export_to_file(const std::string& file_name)
