@@ -8,6 +8,14 @@
 #include "cli.h"
 #include "net.h"
 
+// TODO: X	Less paging
+// TODO: X	Ambigous command prefix handling
+// TODO: 	Code extraction runtime command
+// TODO: 	Code extraction filter option in argp
+// TODO: 	Diff command
+// TODO: 	cfg modifiers print current value if no arg provided
+// TODO: 	Runtime command tab completion
+
 using namespace nlohmann;
 struct message
 {
@@ -34,8 +42,10 @@ const std::string SYSTEM_PROMPT     = "";
 const std::string MODEL             = "gpt-4.1";
 const std::string API_KEY_ENV       = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER    = "```";
-const std::string VERSION           = "0.1";
+const std::string VERSION           = "0.2";
 const std::string NAME              = "Jipitty";
+const int         TERMINAL_HEIGHT   = 24;
+const std::string LESS_COMMAND      = "less";
 } // namespace defaults
 
 class chat_config
@@ -302,8 +312,32 @@ public:
                  }
                  else
                  {
-                     std::cout << cli::set_format(prompt_builder.str(),
-                                                  cli::format::YELLOW);
+                     bool dump = false;
+                     try
+                     {
+                         std::string prompt_str = prompt_builder.str();
+                         int         line_count = std::count(prompt_str.begin(),
+                                                             prompt_str.end(), '\n');
+                         if (line_count > defaults::TERMINAL_HEIGHT)
+                         {
+                             dump = pipe_to_shell(prompt_builder.str(),
+                                                  defaults::LESS_COMMAND) != 0;
+                         }
+                         else
+                         {
+                             dump = true;
+                         }
+                     }
+                     catch (const std::exception& e)
+                     {
+                         dump = true;
+                     }
+
+                     if (dump)
+                     {
+                         std::cout << cli::set_format(prompt_builder.str(),
+                                                      cli::format::YELLOW);
+                     }
                  }
                  return false;
              }},
@@ -337,10 +371,27 @@ public:
              [&]()
              {
                  std::string shell_cmd = prompt.get_next_arg();
-                 return execute_shell(shell_cmd);
+                 try
+                 {
+                     int rc = pipe_from_shell(shell_cmd);
+                     if (rc)
+                     {
+                         std::cerr
+                             << chat_cli::error_tag_string("Command Error")
+                             << "Shell command exited with code " << rc
+                             << std::endl;
+                     }
+                 }
+                 catch (const std::exception& e)
+                 {
+                     std::cerr << chat_cli::error_tag_string("Command Error")
+                               << e.what() << std::endl;
+                     return false;
+                 }
+                 return true;
              }},
 
-            {"clear", "Clear the current prompt and stop building.",
+            {"clear", "Clear the current prompt and stop buffering.",
              [&]()
              {
                  prompt_builder.str("");
@@ -466,6 +517,43 @@ public:
                  print_messages();
                  return false;
              }},
+            {"less",
+             "View the currently selected exchange in page reader if "
+             "available",
+             [&]()
+             {
+                 int target_index = (int)response_index - 1;
+                 if (target_index >= 0)
+                 {
+                     message           msg = completion.messages[target_index];
+                     std::stringstream ss("");
+                     ss << "[User] " << msg.user << std::endl;
+                     ss << "[Bot] " << msg.assistant << std::endl;
+
+                     try
+                     {
+                         int rc =
+                             pipe_to_shell(ss.str(), defaults::LESS_COMMAND);
+                         if (rc)
+                         {
+                             throw std::runtime_error(
+                                 "Less command exited non-zero");
+                         }
+                     }
+                     catch (const std::exception& e)
+                     {
+                         std::cerr
+                             << chat_cli::error_tag_string("Command Error")
+                             << "Failed to page with less" << std::endl;
+                     }
+                 }
+                 else
+                 {
+                     std::cerr << chat_cli::error_tag_string("Command Error")
+                               << "No messages to page" << std::endl;
+                 }
+                 return false;
+             }},
             {"help [first] [count]",
              "Show [count] help messages starting from [first].",
              [&]()
@@ -581,37 +669,58 @@ public:
         return send;
     }
 
-    bool execute_shell(std::string shell_cmd)
+    int pipe_to_shell(const std::string& text, const std::string& shell_cmd)
     {
-        input.str("");
         if (shell_cmd.empty())
+            throw std::invalid_argument("No shell command provided");
+
+        FILE* pipe = popen(shell_cmd.c_str(), "w");
+
+        if (!pipe)
+            throw std::runtime_error("Failed to run shell command");
+
+        size_t      total_written = 0;
+        size_t      to_write      = text.size();
+        const char* data          = text.data();
+
+        while (total_written < to_write)
         {
-            std::cerr << chat_cli::error_tag_string("Command Error")
-                      << "No shell command provided." << std::endl;
-            return false;
+            size_t written =
+                fwrite(data + total_written, 1, to_write - total_written, pipe);
+            if (written == 0)
+            {
+                if (ferror(pipe))
+                {
+                    pclose(pipe);
+                    throw std::runtime_error("Error writing to shell command");
+                }
+                break;
+            }
+            total_written += written;
         }
+
+        return pclose(pipe);
+    }
+
+    int pipe_from_shell(const std::string& shell_cmd)
+    {
+        if (shell_cmd.empty())
+            throw std::invalid_argument("No shell command provided");
         std::string output;
         FILE*       pipe = popen(shell_cmd.c_str(), "r");
         if (!pipe)
-        {
-            std::cerr << chat_cli::error_tag_string("Command Error")
-                      << "Failed to run shell command." << std::endl;
-            return false;
-        }
+            throw std::runtime_error("Failed to run shell command");
+
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
             output += buffer;
-        int rc = pclose(pipe);
-        if (rc != 0)
-        {
-            std::cerr << chat_cli::error_tag_string("Command Error")
-                      << "Shell command exited with code " << rc << std::endl;
-        }
 
+        int rc = pclose(pipe);
+        input.str("");
         input << defaults::FILE_DELIMITER << shell_cmd << std::endl
               << output << defaults::FILE_DELIMITER << std::endl;
 
-        return true;
+        return rc;
     }
 
     std::string message_tag_string()
@@ -847,26 +956,37 @@ public:
 
     bool process_commands()
     {
-        bool send_chat = false;
-        bool cmd_err   = true;
+        bool send_chat   = false;
+        bool invalid_cmd = true;
         if (prompt.parse() > 0)
         {
             std::string command = prompt.get_next_arg().substr(1);
             if (!command.empty())
             {
-                auto it = std::find_if(
-                    commands.begin(), commands.end(),
-                    [&](const runtime_command& cmd)
-                    { return cmd.title.substr(0, command.size()) == command; });
-                if (it != commands.end())
+                std::vector<const runtime_command*> matches;
+                for (const auto& cmd : commands)
                 {
-                    send_chat = it->action();
-                    cmd_err   = false;
+                    if (cmd.title.substr(0, command.size()) == command)
+                        matches.push_back(&cmd);
+                }
+
+                if (matches.size() == 1)
+                {
+                    send_chat   = matches[0]->action();
+                    invalid_cmd = false;
+                }
+                else if (matches.size() > 1)
+                {
+                    std::cerr << chat_cli::error_tag_string("Command Error")
+                              << "Ambigous command '" << command << "' matches "
+                              << matches.size() << std::endl;
+
+                    invalid_cmd = false;
                 }
             }
         }
 
-        if (cmd_err)
+        if (invalid_cmd)
         {
             std::cerr << chat_cli::error_tag_string("Command Error")
                       << "Invalid command, try " << cfg.command_symbol << "help"
