@@ -11,7 +11,7 @@
 // TODO: X	Less paging
 // TODO: X	Ambigous command prefix handling
 // TODO: X	Code extraction runtime command
-// TODO: 	Code extraction filter option in argp
+// TODO: X	Code extraction filter option in argp
 // TODO: 	cfg modifiers print current value if no arg provided
 // TODO: 	Runtime command tab completion
 
@@ -43,7 +43,7 @@ const std::string MODEL                = "gpt-4.1";
 const std::string API_KEY_ENV          = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER       = "```";
 const std::string VERSION              = "0.2";
-const std::string NAME                 = "Jipitty";
+const std::string NAME                 = "jipitty";
 const int         TERMINAL_HEIGHT      = 24;
 const std::string LESS_COMMAND         = "less";
 } // namespace defaults
@@ -57,7 +57,8 @@ public:
           presence(defaults::PRESENCE_PENALTY),
           frequency(defaults::FREQUENCY_PENALTY),
           max_tokens(defaults::MAX_TOKENS), system(defaults::SYSTEM_PROMPT),
-          model(defaults::MODEL), show_version(false), extract_code(false)
+          model(defaults::MODEL), show_version(false), extract_code(false),
+          extract_extension_filters{}
     {
         char* key_ptr = std::getenv(defaults::API_KEY_ENV.c_str());
         api_key       = key_ptr ? key_ptr : "";
@@ -70,14 +71,15 @@ public:
     char        command_symbol;
     net::url    base_url;
 
-    float       temperature;
-    float       presence;
-    float       frequency;
-    int         max_tokens;
-    std::string system;
-    std::string model;
-    bool        show_version;
-    bool        extract_code;
+    float                    temperature;
+    float                    presence;
+    float                    frequency;
+    int                      max_tokens;
+    std::string              system;
+    std::string              model;
+    bool                     show_version;
+    bool                     extract_code;
+    std::vector<std::string> extract_extension_filters;
 
     void reset()
     {
@@ -121,7 +123,8 @@ public:
     static std::string get_shell_doc() { return "[input-file]"; };
     static std::string get_shell_title()
     {
-        return "jipitty -- An OpenAI Large Language Model CLI, written in C++";
+        return defaults::NAME +
+               " -- An OpenAI Large Language Model CLI, written in C++";
     }
 
     static std::vector<argp_option> get_shell_options()
@@ -146,8 +149,10 @@ public:
              "Set system prompt for this conversation", 0},
             {"model", 'm', "STRING", 0,
              "Set the name of the language model to use", 0},
-            {"extract", 'x', 0, 0,
-             "Extract the last code block from the response", 0},
+            {"extract", 'x', "STRING", OPTION_ARG_OPTIONAL,
+             "Extract the last code block with extension STRING from the "
+             "response or simply the last if STRING isn't provided",
+             0},
             {"url", 'u', "URL", 0, "OpenAI API base url", 0},
             {"version", 'v', 0, 0, "Show version", 0}};
     };
@@ -189,8 +194,12 @@ public:
             cfg.model = arg;
             break;
         case 'x':
+        {
             cfg.extract_code = true;
-            break;
+            if (arg)
+                cfg.extract_extension_filters.push_back(arg);
+        }
+        break;
         case 'u':
             cfg.base_url = net::url(arg);
             break;
@@ -540,11 +549,23 @@ public:
                  int target_index = (int)response_index - 1;
                  if (target_index >= 0)
                  {
-                     message     msg  = completion.messages[target_index];
-                     std::string code = extract_code_block(msg.assistant);
+                     message     msg       = completion.messages[target_index];
+                     std::string shell_cmd = prompt.get_next_arg();
+                     std::vector<std::string> filters = {};
+                     std::string              filter  = "";
+
+                     do
+                     {
+                         filter = prompt.get_next_arg();
+                         if (!filter.empty())
+                             filters.push_back(filter);
+                     } while (!filter.empty());
+
+                     std::string code =
+                         extract_code_block(msg.assistant, filters);
+
                      if (!code.empty())
                      {
-                         std::string shell_cmd = prompt.get_next_arg();
                          try
                          {
                              int rc = pipe_to_shell(code, shell_cmd);
@@ -645,23 +666,54 @@ public:
                    "Failed to open file '" + file_name + '\'';
     }
 
-    static std::string extract_code_block(const std::string& content)
+    static std::string
+    extract_code_block(const std::string&             content,
+                       const std::vector<std::string> filters = {})
     {
-        size_t last = content.rfind(defaults::FILE_DELIMITER);
-        if (last == std::string::npos)
-            return "";
+        const std::string& delim = defaults::FILE_DELIMITER;
+        std::vector<std::pair<std::string, std::string>> blocks;
+        size_t                                           pos = 0;
+        while (true)
+        {
+            size_t start = content.find(delim, pos);
+            if (start == std::string::npos)
+                break;
+            size_t ext_start = start + delim.size();
+            size_t ext_end   = content.find('\n', ext_start);
+            if (ext_end == std::string::npos)
+                break;
+            std::string extension = net::trim_whitespace(
+                content.substr(ext_start, ext_end - ext_start));
+            size_t code_start = ext_end + 1;
+            size_t end        = content.find(delim, code_start);
+            if (end == std::string::npos)
+                break; // Malformed block, no closing delimiter
+            std::string code = content.substr(code_start, end - code_start);
+            blocks.emplace_back(extension, code);
+            pos = end + delim.size();
+        }
 
-        size_t second_last = content.rfind(defaults::FILE_DELIMITER, last - 1);
-        if (second_last == std::string::npos)
+        if (filters.empty())
+        {
+            if (!blocks.empty())
+                return net::trim_whitespace(blocks.back().second);
             return "";
-        size_t content_start = second_last + defaults::FILE_DELIMITER.length();
-        std::string code_block =
-            content.substr(content_start, last - content_start);
-        size_t first_vws = code_block.find_first_of("\r\n");
-        if (first_vws != std::string::npos)
-            return code_block.substr(first_vws + 1);
+        }
         else
+        {
+            for (auto it = blocks.rbegin(); it != blocks.rend(); it++)
+            {
+                for (const auto& f : filters)
+                {
+                    if (net::trim_whitespace(it->first) ==
+                        net::trim_whitespace(f))
+                    {
+                        return net::trim_whitespace(it->second);
+                    }
+                }
+            }
             return "";
+        }
     }
 
     bool add_files_to_prompt()
@@ -970,8 +1022,8 @@ public:
                                              ["content"]
                                                  .get<std::string>();
 
-                            std::string code_block =
-                                extract_code_block(content);
+                            std::string code_block = extract_code_block(
+                                content, cfg.extract_extension_filters);
                             if (code_block.empty())
                                 return -1;
                             std::cout << code_block;
@@ -1053,7 +1105,7 @@ public:
     {
         std::stringstream ss;
         std::string       sym(1, cfg.command_symbol);
-        ss << cli::set_format("jipitty", cli::format::BOLD)
+        ss << cli::set_format(defaults::NAME, cli::format::BOLD)
            << ", An OpenAI Large Language Model CLI, written in C++\n";
         ss << "All commands have the prefix '" << sym << "'\n";
         ss << "Anything else is uploaded to OpenAI as a message.\n\n";
