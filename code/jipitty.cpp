@@ -12,7 +12,7 @@
 // TODO: X	Ambigous command prefix handling
 // TODO: X	Code extraction runtime command
 // TODO: X	Code extraction filter option in argp
-// TODO: 	cfg modifiers print current value if no arg provided
+// TODO: x	cfg modifiers print current value if no arg provided
 // TODO: 	Runtime command tab completion
 
 using namespace nlohmann;
@@ -44,8 +44,10 @@ const std::string API_KEY_ENV          = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER       = "```";
 const std::string VERSION              = "0.2";
 const std::string NAME                 = "jipitty";
-const int         TERMINAL_HEIGHT      = 24;
-const std::string LESS_COMMAND         = "less";
+const std::string DESCRIPTION =
+    "An OpenAI Large Language Model CLI, written in C++";
+const int         TERMINAL_HEIGHT = 24;
+const std::string LESS_COMMAND    = "less";
 } // namespace defaults
 
 class chat_config
@@ -123,8 +125,7 @@ public:
     static std::string get_shell_doc() { return "[input-file]"; };
     static std::string get_shell_title()
     {
-        return defaults::NAME +
-               " -- An OpenAI Large Language Model CLI, written in C++";
+        return defaults::NAME + " -- " + defaults::DESCRIPTION;
     }
 
     static std::vector<argp_option> get_shell_options()
@@ -404,7 +405,10 @@ public:
              [&]()
              {
                  std::string system_prompt = prompt.get_next_arg();
-                 cfg.system                = system_prompt;
+                 if (prompt.get_arg_count() > 1)
+                     cfg.system = system_prompt;
+                 std::cout << config_tag_string("System Prompt") << cfg.system
+                           << std::endl;
                  return false;
              }},
             {"prev [number]",
@@ -442,6 +446,9 @@ public:
              {
                  cfg.reset();
                  completion.messages = {};
+                 std::cout << config_tag_string(
+                                  "Conversation and parameters reset")
+                           << std::endl;
                  return false;
              }},
             {"temperature <number>",
@@ -452,6 +459,8 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.temperature = num;
+                 std::cout << config_tag_string("Temperature")
+                           << cfg.temperature << std::endl;
                  return false;
              }},
             {"presence <number>", "(-2 - 2) Penalize tokens by presence.",
@@ -461,6 +470,8 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.presence = num;
+                 std::cout << config_tag_string("Presence Penalty")
+                           << cfg.presence << std::endl;
                  return false;
              }},
             {"frequency <number>", "(-2 - 2) Penalize tokens by frequency.",
@@ -470,6 +481,8 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.frequency = num;
+                 std::cout << config_tag_string("Frequency Penalty")
+                           << cfg.frequency << std::endl;
                  return false;
              }},
             {"maxtokens <number>", "Maximum number of tokens to output.",
@@ -479,6 +492,8 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.max_tokens = num;
+                 std::cout << config_tag_string("Maximum Tokens")
+                           << cfg.max_tokens << std::endl;
                  return false;
              }},
             {"model <name>", "Set the name of the language model to use.",
@@ -487,6 +502,8 @@ public:
                  std::string model = prompt.get_next_arg();
                  if (!model.empty())
                      cfg.model = model;
+                 std::cout << config_tag_string("Model") << cfg.model
+                           << std::endl;
                  return false;
              }},
             {"url <url>", "OpenAI API base url.",
@@ -495,6 +512,8 @@ public:
                  std::string url = prompt.get_next_arg();
                  if (!url.empty())
                      cfg.base_url = net::url(url);
+                 std::cout << config_tag_string("API Base URL")
+                           << cfg.base_url.to_string() << std::endl;
                  return false;
              }},
             {"print", "Re-print the entire conversation.",
@@ -654,6 +673,10 @@ public:
     static std::string error_tag_string(std::string name)
     {
         return "[" + cli::set_format(name, cli::format::RED) + "] ";
+    }
+    static std::string config_tag_string(std::string name)
+    {
+        return "[" + cli::set_format(name, cli::format::YELLOW) + "] ";
     }
 
     static std::string file_error_tag_string(std::string file_name)
@@ -1105,8 +1128,8 @@ public:
     {
         std::stringstream ss;
         std::string       sym(1, cfg.command_symbol);
-        ss << cli::set_format(defaults::NAME, cli::format::BOLD)
-           << ", An OpenAI Large Language Model CLI, written in C++\n";
+        ss << cli::set_format(defaults::NAME, cli::format::BOLD) << ", "
+           << defaults::DESCRIPTION << "\n";
         ss << "All commands have the prefix '" << sym << "'\n";
         ss << "Anything else is uploaded to OpenAI as a message.\n\n";
 
