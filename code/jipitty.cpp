@@ -35,7 +35,7 @@ const std::string SYSTEM_PROMPT        = "";
 const std::string MODEL                = "gpt-4.1";
 const std::string API_KEY_ENV          = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER       = "```";
-const std::string VERSION              = "0.2";
+const std::string VERSION              = "0.3";
 const std::string NAME                 = "jipitty";
 const std::string DESCRIPTION =
     "An OpenAI Large Language Model CLI, written in C++";
@@ -552,29 +552,38 @@ public:
                  }
                  return false;
              }},
-            {"extract <command> [filter ...]",
-             "Extract the last code block in the selected response and "
-             "redirect it to a shell command like 'less', 'diff ./my_file - ', "
-             ",'xclip -selection clipboard' or 'cat > my_file'. Filter to only "
-             "select blocks by language identifier like 'cpp' or 'bash'.",
+            {"extract <command> [number]",
+             "Extract the code block n places before last in the selected "
+             "response and redirect it to a shell command like 'less', 'diff "
+             "./my_file - ', 'xclip -selection clipboard', or 'cat > "
+             "my_file'. ",
              [&]() { //
                  int target_index = (int)response_index - 1;
                  if (target_index >= 0)
                  {
                      message     msg       = completion.messages[target_index];
                      std::string shell_cmd = prompt.get_next_arg();
-                     std::vector<std::string> filters = {};
-                     std::string              filter  = "";
-
-                     do
+                     int         num       = 0;
+                     if (prompt.get_arg_count() > 2)
                      {
-                         filter = prompt.get_next_arg();
-                         if (!filter.empty())
-                             filters.push_back(filter);
-                     } while (!filter.empty());
+                         std::string number_arg = prompt.get_next_arg();
+                         try
+                         {
+                             num = std::stoi(number_arg);
+                         }
+                         catch (const std::exception& e)
+                         {
+                             std::cerr
+                                 << chat_cli::error_tag_string("Command Error")
+                                 << "Expected a number for second extract "
+                                    "command argument"
+                                 << std::endl;
+                             return false;
+                         }
+                     }
 
                      std::string code =
-                         extract_code_block(msg.assistant, filters);
+                         extract_code_block(msg.assistant, {}, num);
 
                      if (!code.empty())
                      {
@@ -697,8 +706,9 @@ public:
 
     static std::string
     extract_code_block(const std::string&             content,
-                       const std::vector<std::string> filters = {})
+                       const std::vector<std::string> filters = {}, int n = 0)
     {
+        n                        = std::max(0, n);
         const std::string& delim = defaults::FILE_DELIMITER;
         std::vector<std::pair<std::string, std::string>> blocks;
         size_t                                           pos = 0;
@@ -724,9 +734,11 @@ public:
 
         if (filters.empty())
         {
-            if (!blocks.empty())
-                return net::trim_whitespace(blocks.back().second);
-            return "";
+            if (blocks.empty() || n >= (int)blocks.size())
+                return "";
+            int         back_index = blocks.size() - 1;
+            const auto& code       = blocks[back_index - n].second;
+            return net::trim_whitespace(code);
         }
         else
         {
@@ -741,8 +753,8 @@ public:
                     }
                 }
             }
-            return "";
         }
+        return "";
     }
 
     bool add_files_to_prompt()
