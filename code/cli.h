@@ -54,6 +54,9 @@ public:
     std::string read_para(const std::string& first_prompt_text = ">",
                           const std::string& prompt_text       = ">",
                           char               new_line_char     = '\\');
+    static void
+    set_command_completions(const std::vector<std::string>& commands);
+
     std::string get_next_arg();
     size_t      get_arg_count();
     int         parse();

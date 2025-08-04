@@ -3,6 +3,43 @@
 
 namespace cli
 {
+static std::vector<std::string> g_command_completions;
+char** cli_completion(const char* text, int start, int end);
+void   prompt::set_command_completions(const std::vector<std::string>& commands)
+{
+    g_command_completions            = commands;
+    rl_attempted_completion_function = &cli_completion;
+}
+
+char* cli_command_generator(const char* text, int state)
+{
+    static size_t list_index;
+    static size_t len;
+    if (state == 0)
+    {
+        list_index = 0;
+        len        = strlen(text);
+    }
+    if (g_command_completions.empty())
+        return nullptr;
+    const auto& cmds = g_command_completions;
+    while (list_index < cmds.size())
+    {
+        const std::string& cmd = cmds[list_index++];
+        if (cmd.compare(0, len, text, len) == 0)
+        {
+            return strdup(cmd.c_str());
+        }
+    }
+    return nullptr;
+}
+
+char** cli_completion(const char* text, int start, int)
+{
+    if (!start)
+        return rl_completion_matches(text, cli_command_generator);
+    return nullptr;
+}
 
 std::string format_code(format fmt)
 {

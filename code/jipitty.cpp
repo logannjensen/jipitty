@@ -8,13 +8,6 @@
 #include "cli.h"
 #include "net.h"
 
-// TODO: X	Less paging
-// TODO: X	Ambigous command prefix handling
-// TODO: X	Code extraction runtime command
-// TODO: X	Code extraction filter option in argp
-// TODO: x	cfg modifiers print current value if no arg provided
-// TODO: 	Runtime command tab completion
-
 using namespace nlohmann;
 struct message
 {
@@ -646,6 +639,19 @@ public:
              }},
 
         };
+
+        std::vector<std::string> cmd_completions{};
+        for (auto cmd : commands)
+        {
+            std::string title_trimmed;
+            size_t      first_space_pos = cmd.title.find(' ');
+            if (first_space_pos != std::string::npos)
+                title_trimmed = cmd.title.substr(0, first_space_pos);
+            else
+                title_trimmed = cmd.title;
+            cmd_completions.push_back(cfg.command_symbol + title_trimmed);
+        }
+        prompt.set_command_completions(cmd_completions);
     }
 
     chat_config                  cfg;
@@ -710,7 +716,7 @@ public:
             size_t code_start = ext_end + 1;
             size_t end        = content.find(delim, code_start);
             if (end == std::string::npos)
-                break; // Malformed block, no closing delimiter
+                break;
             std::string code = content.substr(code_start, end - code_start);
             blocks.emplace_back(extension, code);
             pos = end + delim.size();
@@ -742,9 +748,9 @@ public:
     bool add_files_to_prompt()
     {
         bool send       = false;
-        int  file_count = std::max<size_t>(prompt.get_arg_count(), 1) - 1;
+        int  file_count = std::max<int>((int)prompt.get_arg_count() - 1, 0);
         input.str("");
-        if (!file_count)
+        if (file_count == 0)
         {
             std::cerr << chat_cli::error_tag_string("Command Error")
                       << "No files given" << std::endl;
