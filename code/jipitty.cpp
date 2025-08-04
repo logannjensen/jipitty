@@ -53,7 +53,7 @@ public:
           frequency(defaults::FREQUENCY_PENALTY),
           max_tokens(defaults::MAX_TOKENS), system(defaults::SYSTEM_PROMPT),
           model(defaults::MODEL), show_version(false), extract_code(false),
-          extract_extension_filters{}
+          extract_language_ident_filters{}
     {
         char* key_ptr = std::getenv(defaults::API_KEY_ENV.c_str());
         api_key       = key_ptr ? key_ptr : "";
@@ -74,7 +74,7 @@ public:
     std::string              model;
     bool                     show_version;
     bool                     extract_code;
-    std::vector<std::string> extract_extension_filters;
+    std::vector<std::string> extract_language_ident_filters;
 
     void reset()
     {
@@ -144,8 +144,8 @@ public:
             {"model", 'm', "STRING", 0,
              "Set the name of the language model to use", 0},
             {"extract", 'x', "STRING", OPTION_ARG_OPTIONAL,
-             "Extract the last code block with extension STRING from the "
-             "response or simply the last if STRING isn't provided",
+             "Extract the last code block with language identifier STRING from "
+             "the response or simply the last if STRING isn't provided",
              0},
             {"url", 'u', "URL", 0, "OpenAI API base url", 0},
             {"version", 'v', 0, 0, "Show version", 0}};
@@ -191,7 +191,7 @@ public:
         {
             cfg.extract_code = true;
             if (arg)
-                cfg.extract_extension_filters.push_back(arg);
+                cfg.extract_language_ident_filters.push_back(arg);
         }
         break;
         case 'u':
@@ -517,7 +517,7 @@ public:
              }},
             {"less",
              "View the currently selected exchange in page reader if "
-             "available",
+             "available.",
              [&]()
              {
                  int target_index = (int)response_index - 1;
@@ -556,7 +556,7 @@ public:
              "Extract the last code block in the selected response and "
              "redirect it to a shell command like 'less', 'diff ./my_file - ', "
              ",'xclip -selection clipboard' or 'cat > my_file'. Filter to only "
-             "select blocks by extension like 'cpp' or 'sh'.",
+             "select blocks by language identifier like 'cpp' or 'bash'.",
              [&]() { //
                  int target_index = (int)response_index - 1;
                  if (target_index >= 0)
@@ -707,18 +707,18 @@ public:
             size_t start = content.find(delim, pos);
             if (start == std::string::npos)
                 break;
-            size_t ext_start = start + delim.size();
-            size_t ext_end   = content.find('\n', ext_start);
-            if (ext_end == std::string::npos)
+            size_t ident_start = start + delim.size();
+            size_t ident_end   = content.find('\n', ident_start);
+            if (ident_end == std::string::npos)
                 break;
-            std::string extension = net::trim_whitespace(
-                content.substr(ext_start, ext_end - ext_start));
-            size_t code_start = ext_end + 1;
+            std::string language_ident = net::trim_whitespace(
+                content.substr(ident_start, ident_end - ident_start));
+            size_t code_start = ident_end + 1;
             size_t end        = content.find(delim, code_start);
             if (end == std::string::npos)
                 break;
             std::string code = content.substr(code_start, end - code_start);
-            blocks.emplace_back(extension, code);
+            blocks.emplace_back(language_ident, code);
             pos = end + delim.size();
         }
 
@@ -1052,7 +1052,7 @@ public:
                                                  .get<std::string>();
 
                             std::string code_block = extract_code_block(
-                                content, cfg.extract_extension_filters);
+                                content, cfg.extract_language_ident_filters);
                             if (code_block.empty())
                                 return -1;
                             std::cout << code_block;
