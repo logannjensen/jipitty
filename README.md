@@ -91,6 +91,28 @@ To install system-wide (requires root):
 sudo install -m 755 ./build/jipitty /usr/local/bin/jipitty
 ```
 
+Jipitty is compatible with any OpenAI completions endpoint. You can add something like this to your .bashrc to make seperate commands for various API models:
+<details>
+<summary><strong>~/.bashrc</strong></summary>
+
+```bash
+export OPENAI_API_KEY=your_openai_api_key
+export XAI_API_KEY=your_grok_api_key
+export DASHSCOPE_API_KEY=your_qwen_api_key
+export DEEPSEEK_API_KEY=your_deepseek_api_key
+export GEMINI_API_KEY=your_gemini_api_key
+export ANTHROPIC_API_KEY=your_anthropic_api_key
+alias gpt="jipitty"
+alias o3="jipitty --model='o3-2025-04-16'"
+alias grok="jipitty --apikey="$XAI_API_KEY" --url='https://api.x.ai' --model='grok-4'"
+alias qwen="jipitty --apikey="$DASHSCOPE_API_KEY" --url='https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions' --model='qwen-max'"
+alias deepseek="jipitty --apikey="$DEEPSEEK_API_KEY" --url='https://api.deepseek.com/chat/completions' --model='deepseek-chat'"
+alias gemini="jipitty --apikey="$GEMINI_API_KEY" --url='https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' --model='gemini-2.5-pro'"
+alias claude="jipitty --apikey="$ANTHROPIC_API_KEY" --url='https://api.anthropic.com' --model='claude-sonnet-4-20250514'"
+```
+
+</details>
+
 ---
 
 ## Notes

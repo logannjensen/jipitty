@@ -30,12 +30,13 @@ const std::string COMPLETIONS_ENDPOINT = "/v1/chat/completions";
 constexpr float   TEMPERATURE          = 0.0f;
 constexpr float   PRESENCE_PENALTY     = 0.0f;
 constexpr float   FREQUENCY_PENALTY    = 0.0f;
+constexpr float   TOP_P                = 0.0f;
 constexpr int     MAX_TOKENS           = 0;
 const std::string SYSTEM_PROMPT        = "";
 const std::string MODEL                = "gpt-4.1";
 const std::string API_KEY_ENV          = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER       = std::string(3, char(96));
-const std::string VERSION              = "0.3";
+const std::string VERSION              = "0.4";
 const std::string NAME                 = "jipitty";
 const std::string DESCRIPTION =
     "An OpenAI Large Language Model CLI, written in C++";
@@ -49,7 +50,7 @@ public:
     chat_config()
         : command_symbol(defaults::COMMAND_SYMBOL),
           base_url(defaults::BASE_URL), temperature(defaults::TEMPERATURE),
-          presence(defaults::PRESENCE_PENALTY),
+          top_p(defaults::TOP_P), presence(defaults::PRESENCE_PENALTY),
           frequency(defaults::FREQUENCY_PENALTY),
           max_tokens(defaults::MAX_TOKENS), system(defaults::SYSTEM_PROMPT),
           model(defaults::MODEL), show_version(false), extract_code(false),
@@ -67,6 +68,7 @@ public:
     net::url    base_url;
 
     float                    temperature;
+    float                    top_p;
     float                    presence;
     float                    frequency;
     int                      max_tokens;
@@ -79,6 +81,7 @@ public:
     void reset()
     {
         temperature = defaults::TEMPERATURE;
+        top_p       = defaults::TOP_P;
         presence    = defaults::PRESENCE_PENALTY;
         frequency   = defaults::FREQUENCY_PENALTY;
         max_tokens  = defaults::MAX_TOKENS;
@@ -90,15 +93,23 @@ public:
     {
         if (j.is_object())
         {
+            temperature = defaults::TEMPERATURE;
             if (j["temperature"].is_number())
                 temperature = j["temperature"].get<float>();
 
+            top_p = defaults::TOP_P;
+            if (j["top_p"].is_number())
+                top_p = j["top_p"].get<float>();
+
+            presence = defaults::PRESENCE_PENALTY;
             if (j["presence_penalty"].is_number())
                 presence = j["presence_penalty"].get<float>();
 
+            frequency = defaults::FREQUENCY_PENALTY;
             if (j["frequency_penalty"].is_number())
                 frequency = j["frequency_penalty"].get<float>();
 
+            max_tokens = defaults::MAX_TOKENS;
             if (j["max_tokens"].is_number())
                 max_tokens = j["max_tokens"].get<int>();
 
@@ -134,6 +145,8 @@ public:
              0},
             {"temperature", 't', "NUMBER", 0,
              "(0 - 2) Higher for less predictable responses", 0},
+            {"top_p", -1, "NUMBER", 0,
+             "(0 - 1) Nucleus Sampling, alternative to temperature", 0},
             {"presence", 'p', "NUMBER", 0,
              "(-2 - 2) Penalize tokens by presence", 0},
             {"frequency", 'f', "NUMBER", 0,
@@ -200,6 +213,9 @@ public:
         case 'v':
             cfg.show_version = true;
             break;
+        case -1:
+            cfg.top_p = atof(arg);
+            break;
         case ARGP_KEY_ARG:
             if (state->arg_num >= 1)
                 argp_usage(state);
@@ -255,15 +271,26 @@ public:
 
     json create_request(chat_config& cfg)
     {
-        json request_object           = json::object();
-        request_object["model"]       = cfg.model;
-        request_object["stream"]      = true;
-        request_object["temperature"] = cfg.temperature;
-        if (cfg.max_tokens)
+        json request_object      = json::object();
+        request_object["model"]  = cfg.model;
+        request_object["stream"] = true;
+
+        if (cfg.temperature != defaults::TEMPERATURE)
+            request_object["temperature"] = cfg.temperature;
+
+        if (cfg.top_p != defaults::TOP_P)
+            request_object["top_p"] = cfg.top_p;
+
+        if (cfg.max_tokens != defaults::MAX_TOKENS)
             request_object["max_tokens"] = cfg.max_tokens;
-        request_object["presence_penalty"]  = cfg.presence;
-        request_object["frequency_penalty"] = cfg.frequency;
-        request_object["messages"]          = json::array();
+
+        if (cfg.presence != defaults::PRESENCE_PENALTY)
+            request_object["presence_penalty"] = cfg.presence;
+
+        if (cfg.frequency != defaults::FREQUENCY_PENALTY)
+            request_object["frequency_penalty"] = cfg.frequency;
+
+        request_object["messages"] = json::array();
         if (!cfg.system.empty())
         {
             request_object["messages"].push_back(
@@ -452,8 +479,26 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.temperature = num;
-                 std::cout << config_tag_string("Temperature")
-                           << cfg.temperature << std::endl;
+                 std::cout << config_tag_string("Temperature");
+                 if (cfg.temperature == defaults::TEMPERATURE)
+                     std::cout << "API default" << std::endl;
+                 else
+                     std::cout << cfg.temperature << std::endl;
+                 return false;
+             }},
+            {"top_p <number>",
+             "(0 - 1) Nucleus Sampling, alternative to temperature.",
+             [&]()
+             {
+                 float             num;
+                 std::stringstream ss(prompt.get_next_arg());
+                 if (ss >> num)
+                     cfg.top_p = num;
+                 std::cout << config_tag_string("Top P");
+                 if (cfg.top_p == defaults::TOP_P)
+                     std::cout << "API default" << std::endl;
+                 else
+                     std::cout << cfg.top_p << std::endl;
                  return false;
              }},
             {"presence <number>", "(-2 - 2) Penalize tokens by presence.",
@@ -463,8 +508,11 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.presence = num;
-                 std::cout << config_tag_string("Presence Penalty")
-                           << cfg.presence << std::endl;
+                 std::cout << config_tag_string("Presence Penalty");
+                 if (cfg.presence == defaults::PRESENCE_PENALTY)
+                     std::cout << "API default" << std::endl;
+                 else
+                     std::cout << cfg.presence << std::endl;
                  return false;
              }},
             {"frequency <number>", "(-2 - 2) Penalize tokens by frequency.",
@@ -474,8 +522,11 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.frequency = num;
-                 std::cout << config_tag_string("Frequency Penalty")
-                           << cfg.frequency << std::endl;
+                 std::cout << config_tag_string("Frequency Penalty");
+                 if (cfg.frequency == defaults::FREQUENCY_PENALTY)
+                     std::cout << "API default" << std::endl;
+                 else
+                     std::cout << cfg.frequency << std::endl;
                  return false;
              }},
             {"maxtokens <number>", "Maximum number of tokens to output.",
@@ -485,8 +536,11 @@ public:
                  std::stringstream ss(prompt.get_next_arg());
                  if (ss >> num)
                      cfg.max_tokens = num;
-                 std::cout << config_tag_string("Maximum Tokens")
-                           << cfg.max_tokens << std::endl;
+                 std::cout << config_tag_string("Maximum Tokens");
+                 if (cfg.max_tokens == defaults::MAX_TOKENS)
+                     std::cout << "API default" << std::endl;
+                 else
+                     std::cout << cfg.max_tokens << std::endl;
                  return false;
              }},
             {"model <name>", "Set the name of the language model to use.",
@@ -1004,11 +1058,11 @@ public:
 #endif
                     if (cfg.extract_code)
                         request_object["stream"] = false;
-                    net::request req = {cfg.base_url.to_string() +
-                                            defaults::COMPLETIONS_ENDPOINT,
-                                        net::http_method::POST,
-                                        {},
-                                        request_object};
+                    net::url req_url(cfg.base_url);
+                    if (req_url.path.empty() || req_url.path == "/")
+                        req_url.path = defaults::COMPLETIONS_ENDPOINT;
+                    net::request req = {
+                        req_url, net::http_method::POST, {}, request_object};
                     if (!cfg.extract_code)
                         req.subscribe(net::sse_dechunker_callback, &sse);
                     net::response response = client.send(req);
@@ -1040,7 +1094,9 @@ public:
                         {
                             std::cerr
                                 << chat_cli::error_tag_string("HTTP Error")
-                                << response.status_line;
+                                << response.status_line << std::endl;
+                            if (!response.body.empty())
+                                std::cerr << response.to_string() << std::endl;
                         }
                     }
                     else if (sse.unexpected_response)
