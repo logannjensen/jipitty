@@ -91,7 +91,7 @@ To install system-wide (requires root):
 sudo install -m 755 ./build/jipitty /usr/local/bin/jipitty
 ```
 
-Jipitty is compatible with any OpenAI completions endpoint. You can add something like this to your .bashrc to make seperate commands for various API models:
+Jipitty is compatible with any OpenAI completions endpoint. You can add something like this to your .bashrc to make separate commands for various API models:
 <details>
 <summary><strong>~/.bashrc</strong></summary>
 
