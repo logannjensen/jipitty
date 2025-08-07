@@ -36,7 +36,7 @@ const std::string SYSTEM_PROMPT        = "";
 const std::string MODEL                = "gpt-4.1";
 const std::string API_KEY_ENV          = "OPENAI_API_KEY";
 const std::string FILE_DELIMITER       = std::string(3, char(96));
-const std::string VERSION              = "0.4";
+const std::string VERSION              = "0.5";
 const std::string NAME                 = "jipitty";
 const std::string DESCRIPTION =
     "An OpenAI Large Language Model CLI, written in C++";
@@ -371,6 +371,95 @@ public:
              "Upload one or more labeled files to OpenAI or "
              "append to current prompt.",
              [&]() { return add_files_to_prompt(); }},
+
+            {"line <file_path1> <NUMBER> [[+|-]NUMBER]",
+             "Add to prompt lines from the first argument, starting from the "
+             "second argument either to the third, or to plus/minus the third.",
+             [&]()
+             {
+                 std::string              file_name = prompt.get_next_arg();
+                 std::ifstream            fs(file_name);
+                 std::stringstream        file_data_buffer;
+                 std::string              file_data;
+                 std::vector<std::string> lines = {};
+                 if (fs.is_open())
+                 {
+                     file_data_buffer
+                         << std::string((std::istreambuf_iterator<char>(fs)),
+                                        std::istreambuf_iterator<char>());
+                     lines = split_lines(file_data_buffer.str());
+                     if (lines.empty())
+                     {
+                         std::cerr
+                             << chat_cli::error_tag_string("Command Error")
+                             << "File '" << file_name << "' was empty"
+                             << std::endl;
+                         return false;
+                     }
+                 }
+                 else
+                 {
+                     std::cerr << file_error_tag_string(file_name) << std::endl;
+                     return false;
+                 }
+
+                 int start_line = 0;
+                 try
+                 {
+                     start_line = std::stoi(prompt.get_next_arg());
+                 }
+                 catch (const std::exception& e)
+                 {
+                     std::cerr << chat_cli::error_tag_string("Command Error")
+                               << "Expected a line number in second argument"
+                               << std::endl;
+                     return false;
+                 }
+                 int         end_line  = start_line;
+                 std::string third_arg = prompt.get_next_arg();
+                 if (!third_arg.empty())
+                 {
+                     int direction = 0;
+                     if (third_arg[0] == '+')
+                         direction = 1;
+                     else if (third_arg[0] == '-')
+                         direction = -1;
+                     if (direction && third_arg.size() > 1)
+                     {
+                         int               amount = 0;
+                         std::stringstream ss(third_arg.substr(1));
+                         if (ss >> amount)
+                             end_line += (direction * amount);
+                     }
+                     else
+                     {
+                         std::stringstream ss(third_arg);
+                         ss >> end_line;
+                     }
+                 }
+
+                 int last_line = lines.size();
+                 start_line =
+                     std::max(0, std::min(start_line - 1, last_line - 1));
+                 end_line = std::max(0, std::min(end_line - 1, last_line - 1));
+
+                 if (end_line < start_line)
+                     std::swap(end_line, start_line);
+
+                 input.str("");
+                 input << defaults::FILE_DELIMITER << file_name << ":"
+                       << start_line + 1;
+                 if (end_line > start_line)
+                     input << "," << end_line + 1;
+                 input << std::endl;
+                 do
+                 {
+                     input << lines[start_line++] << std::endl;
+                 } while (start_line <= end_line);
+                 input << defaults::FILE_DELIMITER << std::endl;
+                 return true;
+             }},
+
             {"shell <command>",
              "Execute a shell command and send it with standard output to "
              "OpenAI or "
@@ -1295,6 +1384,26 @@ public:
         {
             std::cerr << file_error_tag_string(file_name) << std::endl;
         }
+    }
+
+    std::vector<std::string> split_lines(const std::string& multi_line)
+    {
+        std::vector<std::string> lines;
+        size_t                   start = 0;
+        size_t                   pos   = 0;
+
+        while (pos <= multi_line.length())
+        {
+            if (pos == multi_line.length() || multi_line[pos] == '\n' ||
+                multi_line[pos] == '\r')
+            {
+                lines.push_back(multi_line.substr(start, pos - start));
+                start = pos + 1;
+            }
+            pos++;
+        }
+
+        return lines;
     }
 };
 
