@@ -372,7 +372,7 @@ public:
              "append to current prompt.",
              [&]() { return add_files_to_prompt(); }},
 
-            {"line <file_path1> <NUMBER> [[+|-]NUMBER]",
+            {"line <file_path> <number> [[+|-]number]",
              "Add to prompt lines from the first argument, starting from the "
              "second argument either to the third, or to plus/minus the third.",
              [&]()

@@ -102,7 +102,7 @@ export DASHSCOPE_API_KEY=your_qwen_api_key
 export DEEPSEEK_API_KEY=your_deepseek_api_key
 export GEMINI_API_KEY=your_gemini_api_key
 export ANTHROPIC_API_KEY=your_anthropic_api_key
-alias gpt="jipitty"
+alias gpt="jipitty --model='gpt-5-2025-08-07'"
 alias o3="jipitty --model='o3-2025-04-16'"
 alias grok="jipitty --apikey="$XAI_API_KEY" --url='https://api.x.ai' --model='grok-4'"
 alias qwen="jipitty --apikey="$DASHSCOPE_API_KEY" --url='https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions' --model='qwen-max'"
