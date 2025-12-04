@@ -107,7 +107,7 @@ alias o3="jipitty --model='o3-2025-04-16'"
 alias grok="jipitty --apikey="$XAI_API_KEY" --url='https://api.x.ai' --model='grok-4'"
 alias qwen="jipitty --apikey="$DASHSCOPE_API_KEY" --url='https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions' --model='qwen-max'"
 alias deepseek="jipitty --apikey="$DEEPSEEK_API_KEY" --url='https://api.deepseek.com/chat/completions' --model='deepseek-chat'"
-alias gemini="jipitty --apikey="$GEMINI_API_KEY" --url='https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' --model='gemini-2.5-pro'"
+alias gemini="jipitty --apikey="$GEMINI_API_KEY" --url='https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' --model='gemini-pro-latest'"
 alias claude="jipitty --apikey="$ANTHROPIC_API_KEY" --url='https://api.anthropic.com' --model='claude-sonnet-4-20250514'"
 ```
 
