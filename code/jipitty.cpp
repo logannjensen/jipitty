@@ -41,7 +41,7 @@ const std::string NAME                 = "jipitty";
 const std::string DESCRIPTION =
     "An OpenAI Large Language Model CLI, written in C++";
 const int         TERMINAL_HEIGHT = 24;
-const std::string LESS_COMMAND    = "less";
+const std::string PAGER           = "less";
 } // namespace defaults
 
 class chat_config
@@ -53,8 +53,8 @@ public:
           top_p(defaults::TOP_P), presence(defaults::PRESENCE_PENALTY),
           frequency(defaults::FREQUENCY_PENALTY),
           max_tokens(defaults::MAX_TOKENS), system(defaults::SYSTEM_PROMPT),
-          model(defaults::MODEL), show_version(false), extract_code(false),
-          extract_language_ident_filters{}
+          model(defaults::MODEL), pager(defaults::PAGER), show_version(false),
+          extract_code(false), extract_language_ident_filters{}
     {
         char* key_ptr = std::getenv(defaults::API_KEY_ENV.c_str());
         api_key       = key_ptr ? key_ptr : "";
@@ -74,6 +74,7 @@ public:
     int                      max_tokens;
     std::string              system;
     std::string              model;
+    std::string              pager;
     bool                     show_version;
     bool                     extract_code;
     std::vector<std::string> extract_language_ident_filters;
@@ -160,6 +161,8 @@ public:
              "Extract the last code block with language identifier STRING from "
              "the response or simply the last if STRING isn't provided",
              0},
+            {"pager", 'P', "COMMAND", 0,
+             "The pager command to use for long output (e.g., 'glow -p')", 0},
             {"url", 'u', "URL", 0, "OpenAI API base url", 0},
             {"version", 'v', 0, 0, "Show version", 0}};
     };
@@ -199,6 +202,9 @@ public:
             break;
         case 'm':
             cfg.model = arg;
+            break;
+        case 'P':
+            cfg.pager = arg;
             break;
         case 'x':
         {
@@ -642,6 +648,16 @@ public:
                            << std::endl;
                  return false;
              }},
+            {"pager <command>", "Set the pager command to use for long output.",
+             [&]()
+             {
+                 std::string pager_cmd = prompt.get_next_arg();
+                 if (!pager_cmd.empty())
+                     cfg.pager = pager_cmd;
+                 std::cout << config_tag_string("Pager") << cfg.pager
+                           << std::endl;
+                 return false;
+             }},
             {"url <url>", "OpenAI API base url.",
              [&]()
              {
@@ -673,19 +689,19 @@ public:
 
                      try
                      {
-                         int rc =
-                             pipe_to_shell(ss.str(), defaults::LESS_COMMAND);
+                         int rc = pipe_to_shell(ss.str(), cfg.pager);
                          if (rc)
                          {
                              throw std::runtime_error(
-                                 "Less command exited non-zero");
+                                 "Pager command exited non-zero");
                          }
                      }
                      catch (const std::exception& e)
                      {
                          std::cerr
                              << chat_cli::error_tag_string("Command Error")
-                             << "Failed to page with less" << std::endl;
+                             << "Failed to page with '" << cfg.pager << "'"
+                             << std::endl;
                      }
                  }
                  else
@@ -946,7 +962,7 @@ public:
                             "[Controls: q to exit, j/k to scroll, h for more]",
                             cli::format::BOLD) +
                             "\n\n" + output_str,
-                        defaults::LESS_COMMAND) != 0;
+                        cfg.pager) != 0;
             else
                 fallback = true;
         }
@@ -1415,6 +1431,7 @@ int main(int argc, char** argv)
             argc, argv, chat_config::get_shell_options(),
             chat_config::from_shell_arg, chat_config::get_shell_doc(),
             chat_config::get_shell_title());
+
         chat_config cfg = parsed_args.get_arguments();
         chat_cli    cli(cfg);
         return cli.command_loop();
