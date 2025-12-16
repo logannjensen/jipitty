@@ -83,9 +83,11 @@ public:
     {
         temperature = defaults::TEMPERATURE;
         top_p       = defaults::TOP_P;
-        presence    = defaults::PRESENCE_PENALTY;
-        frequency   = defaults::FREQUENCY_PENALTY;
-        max_tokens  = defaults::MAX_TOKENS;
+
+        presence  = defaults::PRESENCE_PENALTY;
+        frequency = defaults::FREQUENCY_PENALTY;
+
+        max_tokens = defaults::MAX_TOKENS;
         system.clear();
         model = defaults::MODEL;
     }
@@ -103,6 +105,7 @@ public:
                 top_p = j["top_p"].get<float>();
 
             presence = defaults::PRESENCE_PENALTY;
+
             if (j["presence_penalty"].is_number())
                 presence = j["presence_penalty"].get<float>();
 
@@ -115,6 +118,7 @@ public:
                 max_tokens = j["max_tokens"].get<int>();
 
             if (j["messages"].is_array() && j["messages"].size() >= 1 &&
+
                 j["messages"][0]["role"].is_string() &&
                 j["messages"][0]["role"].get<std::string>() == "system" &&
                 j["messages"][0]["content"].is_string())
@@ -239,7 +243,7 @@ public:
 class chat_completion
 {
 public:
-    chat_completion(){};
+    chat_completion() {};
     std::vector<message> messages = {};
     size_t               import_messages(json j)
     {
@@ -266,6 +270,7 @@ public:
                         next_message.assistant =
                             message_json["content"].get<std::string>();
                         messages.push_back(next_message);
+
                         next_message = {};
                         have_user    = false;
                     }
@@ -453,7 +458,7 @@ public:
                      std::swap(end_line, start_line);
 
                  input.str("");
-                 input << defaults::FILE_DELIMITER << file_name << ":"
+                 input << std::endl << defaults::FILE_DELIMITER << file_name << ":"
                        << start_line + 1;
                  if (end_line > start_line)
                      input << "," << end_line + 1;
@@ -921,6 +926,7 @@ public:
         bool send       = false;
         int  file_count = std::max<int>((int)prompt.get_arg_count() - 1, 0);
         input.str("");
+        input << std::endl;
         if (file_count == 0)
         {
             std::cerr << chat_cli::error_tag_string("Command Error")
