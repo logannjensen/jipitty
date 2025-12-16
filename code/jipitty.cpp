@@ -1313,8 +1313,7 @@ public:
     {
         std::stringstream ss;
         std::string       sym(1, cfg.command_symbol);
-        ss << cli::set_format(defaults::NAME, cli::format::BOLD) << ", "
-           << defaults::DESCRIPTION << "\n";
+        ss << defaults::NAME << ", " << defaults::DESCRIPTION << "\n";
         ss << "All commands have the prefix '" << sym << "'\n";
         ss << "Anything else is uploaded to OpenAI as a message.\n\n";
 
